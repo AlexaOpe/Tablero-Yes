@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Yes Visas · Tablero de Ingresos (panel Excel)</title>
+  <!-- Office.js: hace que Excel cargue esto como panel y permite leer BaseDeDatos en vivo -->
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ===== Encabezado branded ===== -->
+  <header class="topbar">
+    <div class="brand">
+      <img src="assets/logo-marca.png" alt="Yucatan Expatriate Services" class="brand-logo" />
+      <div class="brand-text">
+        <span class="brand-title">Tablero de Ingresos</span>
+        <span class="brand-sub">Validación al momento de la captura · en vivo desde Excel</span>
+      </div>
+    </div>
+    <div class="controls">
+      <label class="ctrl">
+        <span>Año</span>
+        <select id="selAnio"></select>
+      </label>
+      <label class="ctrl">
+        <span>Departamento</span>
+        <select id="selDepto"></select>
+      </label>
+      <button id="btnRefresh" class="btn-refresh" title="Releer la tabla BaseDeDatos">
+        <span class="ico">⟳</span> Actualizar
+      </button>
+      <div class="updated">
+        <span id="updatedLabel">—</span>
+        <small id="sourceLabel"></small>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== Pestañas por oficina ===== -->
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-ofi="TODOS"><strong>YES</strong> · Todo</button>
+    <button class="tab" data-ofi="MID"><strong>MID</strong> · Mérida</button>
+    <button class="tab" data-ofi="CDMX"><strong>CDMX</strong> · Ciudad de México</button>
+  </nav>
+
+  <main class="layout">
+    <section class="kpis" id="kpis"></section>
+
+    <section class="grid-charts">
+      <div class="card">
+        <div class="card-head"><h3>Ingresos por departamento</h3><span id="lblAnioDep" class="tag"></span></div>
+        <div class="chart-box"><canvas id="chartDepto"></canvas></div>
+        <div id="deptoLegend" class="depto-legend"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Top grupos de servicio</h3><span id="lblAnioGrupo" class="tag"></span></div>
+        <div class="chart-box"><canvas id="chartGrupo"></canvas></div>
+      </div>
+      <div class="card card-wide">
+        <div class="card-head"><h3>Comparativo mensual</h3><span id="lblComp" class="tag"></span></div>
+        <div class="chart-box chart-box-wide"><canvas id="chartComp"></canvas></div>
+      </div>
+    </section>
+
+    <section class="grid-bottom">
+      <div class="card card-flags">
+        <div class="card-head"><h3>Banderas de validación</h3><span class="tag tag-warn" id="flagsCount">0</span></div>
+        <div id="flags" class="flags-list"></div>
+      </div>
+      <div class="card card-table">
+        <div class="card-head"><h3>Últimas transacciones</h3><span class="tag" id="lastCount"></span></div>
+        <div class="table-wrap">
+          <table id="tblLast">
+            <thead>
+              <tr>
+                <th>Fecha</th><th>Cliente</th><th>Depto</th><th>Servicio</th>
+                <th>Origen</th><th class="num">TotalMXN</th><th class="num">USD</th><th class="num">TC</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <span>Yes Visas · Yucatan Expatriate Services</span>
+      <span id="footMeta"></span>
+    </footer>
+  </main>
+
+  <!-- En el panel los datos vienen EN VIVO de Excel (Office.js); no se incrusta fact.js. -->
+  <script src="assets/chart.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
