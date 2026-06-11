@@ -416,6 +416,45 @@ async function refresh(){
 
 document.getElementById('btnRefresh').addEventListener('click',refresh);
 
+/* ---------- Descargar FOTO (HTML autocontenido para compartir por WhatsApp) ----------
+   Toma los datos YA leídos (state.rows, los mismos que ve el panel), los inyecta en
+   la plantilla self-contained (Chart.js + estilos + logo ya incrustados) y dispara la
+   descarga. NO escribe en el Excel: solo genera un archivo local en Descargas. */
+function fechaHoyISO(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+async function downloadFoto(){
+  const btn=document.getElementById('btnDownload');
+  if(!btn) return;
+  const original=btn.innerHTML;
+  if(!Array.isArray(state.rows) || state.rows.length===0){
+    alert('Aún no hay datos cargados. Pulsa "Actualizar" primero.');
+    return;
+  }
+  btn.disabled=true; btn.innerHTML='<span class="ico">⏳</span> Generando…';
+  try{
+    const r=await fetch('foto-plantilla.html',{cache:'no-store'});
+    if(!r.ok) throw new Error('No se pudo leer la plantilla (HTTP '+r.status+')');
+    let tpl=await r.text();
+    // El marcador va entre comillas en la plantilla; lo cambiamos por el arreglo real.
+    const datos=JSON.stringify(state.rows);
+    tpl=tpl.replace('"__FACT_PLACEHOLDER__"', datos);
+    const blob=new Blob([tpl],{type:'text/html;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='Tablero-Yes-'+fechaHoyISO()+'.html';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+  }catch(e){
+    alert('No se pudo generar la foto: '+e.message);
+  }finally{
+    btn.disabled=false; btn.innerHTML=original;
+  }
+}
+const _btnDl=document.getElementById('btnDownload');
+if(_btnDl) _btnDl.addEventListener('click',downloadFoto);
+
 /* Arranque:
    - Dentro de Excel (add-in): espera a que Office esté listo y lee la tabla EN VIVO.
    - Fuera de Excel (navegador / doble clic): arranca directo con fact.js / fetch. */
