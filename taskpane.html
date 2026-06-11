@@ -64,13 +64,30 @@
         <div class="card-head"><h3>Comparativo mensual</h3><span id="lblComp" class="tag"></span></div>
         <div class="chart-box chart-box-wide"><canvas id="chartComp"></canvas></div>
       </div>
+      <div class="card card-wide">
+        <div class="card-head">
+          <h3>Tipo de cambio por mes</h3>
+          <div class="tc-toggle" id="tcToggle">
+            <button class="tc-opt active" data-tc="efectivo">Efectivo</button>
+            <button class="tc-opt" data-tc="paypal">PayPal</button>
+          </div>
+        </div>
+        <div class="chart-box chart-box-wide"><canvas id="chartTC"></canvas></div>
+      </div>
+    </section>
+
+    <section class="grid-charts">
+      <div class="card">
+        <div class="card-head"><h3>Top clientes</h3><span id="lblTopCli" class="tag"></span></div>
+        <div id="topClientes" class="mini-table"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Ticket promedio por departamento</h3><span id="lblTicket" class="tag"></span></div>
+        <div id="ticketDepto" class="mini-table"></div>
+      </div>
     </section>
 
     <section class="grid-bottom">
-      <div class="card card-flags">
-        <div class="card-head"><h3>Banderas de validación</h3><span class="tag tag-warn" id="flagsCount">0</span></div>
-        <div id="flags" class="flags-list"></div>
-      </div>
       <div class="card card-table">
         <div class="card-head"><h3>Últimas transacciones</h3><span class="tag" id="lastCount"></span></div>
         <div class="table-wrap">
@@ -84,6 +101,10 @@
             <tbody></tbody>
           </table>
         </div>
+      </div>
+      <div class="card card-flags">
+        <div class="card-head"><h3>Banderas de validación</h3><span class="tag tag-warn" id="flagsCount">0</span></div>
+        <div id="flags" class="flags-list"></div>
       </div>
     </section>
 

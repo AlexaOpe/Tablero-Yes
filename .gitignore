@@ -1,0 +1,12 @@
+# Datos locales para maquetar — NO se suben al repo.
+# En producción los datos vienen EN VIVO de Excel (Office.js).
+data/
+*.local.json
+
+# Foto descargada del tablero (se genera en local)
+Tablero-Yes-*.html
+
+# Sistema / editor
+.DS_Store
+Thumbs.db
+.vscode/

@@ -28,7 +28,8 @@ const fmtMXN2 = new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',m
 const fmtUSD  = new Intl.NumberFormat('es-MX',{style:'currency',currency:'USD',maximumFractionDigits:0});
 const fmtNum  = new Intl.NumberFormat('es-MX');
 
-const state = { rows:[], anio:null, depto:'TODOS', oficina:'TODOS', source:'', inExcel:false };
+const state = { rows:[], anio:null, depto:'TODOS', oficina:'TODOS', source:'', inExcel:false,
+                tcRows:[], tcTipo:'efectivo' };
 const charts = {};
 
 /* ---------- Carga de datos (modo archivo / fetch) ---------- */
@@ -107,11 +108,83 @@ async function loadDataLive(){
   });
 }
 
+/* ---------- Carga del Tipo de Cambio (hoja TC: Año, Mes, Efectivo, PayPal) ----------
+   Nunca rompe el tablero: si falla, devuelve [] y la gráfica de TC sale vacía. */
+const MES_NOM = {enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,
+                 julio:7,agosto:8,septiembre:9,octubre:10,noviembre:11,diciembre:12};
+async function loadTC(){
+  try{
+    const r = await fetch('data/tc.json', {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return await r.json();
+  }catch(e){ return []; }
+}
+async function loadTCLive(){
+  try{
+    return await Excel.run(async (ctx)=>{
+      const used = ctx.workbook.worksheets.getItem('TC').getUsedRange().load('values');
+      await ctx.sync();
+      const vals = used.values;
+      const norm = s => String(s ?? '').trim().toLowerCase();
+      // localizar la fila de encabezado por sus nombres (la tabla no empieza en A1)
+      let hr=-1, cA, cM, cE, cP;
+      for(let i=0;i<vals.length;i++){
+        const row = vals[i].map(norm);
+        const ia=row.indexOf('año'), im=row.indexOf('mes');
+        if(ia>=0 && im>=0){ hr=i; cA=ia; cM=im; cE=row.indexOf('efectivo'); cP=row.indexOf('paypal'); break; }
+      }
+      if(hr<0) return [];
+      const out=[];
+      for(let i=hr+1;i<vals.length;i++){
+        const r=vals[i];
+        const a=parseInt(r[cA],10), m=MES_NOM[norm(r[cM])];
+        if(!a || !m) continue;
+        out.push({ anio:a, mes:m,
+          efectivo: cE>=0 ? (Number(r[cE])||null) : null,
+          paypal:   cP>=0 ? (Number(r[cP])||null) : null });
+      }
+      return out;
+    });
+  }catch(e){ return []; }
+}
+
 /* ---------- Utilidades ---------- */
 const yearOf  = r => (r.fecha||'').slice(0,4);
 const monthOf = r => parseInt((r.fecha||'0000-00').slice(5,7),10) - 1; // 0..11
 const isBlank = v => v===null || v===undefined || String(v).trim()==='';
 const num = v => (typeof v==='number' && isFinite(v)) ? v : 0;
+
+// Normaliza texto para comparar: minúsculas, sin acentos, espacios colapsados.
+function normKey(s){
+  return String(s ?? '').toLowerCase().normalize('NFD')
+    .replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+}
+// Valores que se escriben de dos formas pero son el mismo (acentos/mayúsculas/espacios).
+// Devuelve, por grupo, las grafías ordenadas (la 1ª = mayoritaria) para marcar la minoritaria.
+function similarValues(rows){
+  const out=[];
+  ['servicio','departamento','grupo','oficina'].forEach(f=>{
+    const byKey={};
+    rows.forEach(r=>{
+      const raw=String(r[f]||'').trim(); if(!raw) return;
+      const k=normKey(raw); (byKey[k]=byKey[k]||{}); byKey[k][raw]=(byKey[k][raw]||0)+1;
+    });
+    for(const k in byKey){
+      const grafías=byKey[k];
+      if(Object.keys(grafías).length>1){
+        const variantes=Object.keys(grafías).sort((a,b)=>grafías[b]-grafías[a]);
+        out.push({campo:f, variantes});
+      }
+    }
+  });
+  return out;
+}
+// Último tipo de cambio disponible en la tabla TC para 'efectivo' o 'paypal'.
+function latestTC(tipo){
+  const rows=state.tcRows.filter(r=>r && r[tipo]!=null)
+    .sort((a,b)=>(b.anio-a.anio)||(b.mes-a.mes));
+  return rows[0] ? {val:rows[0][tipo], anio:rows[0].anio, mes:rows[0].mes} : null;
+}
 
 function sumBy(rows, keyFn, valFn){
   const m = new Map();
@@ -121,11 +194,22 @@ function sumBy(rows, keyFn, valFn){
 
 /* ---------- Banderas de validación (quality-at-source) ----------
    Solo "servicios sin catalogar" (Grupo "Otros"), por decisión del usuario. */
-function computeFlags(rows){
+function computeFlags(rows, all){
   const sinCatalogar=[];
   const flaggedRows = new Set();
+
+  // Valores escritos de dos formas (acentos/mayúsculas/espacios). A nivel catálogo (todo el archivo).
+  const sim = similarValues(all || rows);
+  const minor = new Set();   // (campo|grafía minoritaria) = posible error de dedo
+  sim.forEach(g=>{ g.variantes.slice(1).forEach(v=>minor.add(g.campo+'|'+v)); });
+  const exSim = sim.slice(0,6).map(g=>`${g.campo}: "${g.variantes.join('"  ≈  "')}"`);
+
   rows.forEach((r,i)=>{
-    if((r.grupo||'')==='Otros'){ sinCatalogar.push(i); flaggedRows.add(i); }
+    if((r.grupo||'')==='Otros') sinCatalogar.push(i);   // informativo, no se resalta
+    for(const f of ['servicio','departamento','grupo','oficina']){
+      const raw=String(r[f]||'').trim();
+      if(raw && minor.has(f+'|'+raw)){ flaggedRows.add(i); break; }
+    }
   });
 
   const ex = idxs => idxs.slice(0,5).map(i=>{
@@ -136,9 +220,12 @@ function computeFlags(rows){
   return {
     flaggedRows,
     cats:[
-      {key:'otros', sev:'media', ico:'🏷️', title:'Servicios sin catalogar (Grupo "Otros")',
+      {key:'similar', sev:'alta', ico:'🔤', title:'Valores escritos de dos formas',
+       n:sim.length, ej:exSim,
+       desc:'El mismo valor aparece con distinta ortografía (acentos, mayúsculas o espacios). Conviene unificarlo en el Excel.'},
+      {key:'otros', sev:'baja', ico:'🏷️', title:'Movimientos en Grupo "Otros"',
        n:sinCatalogar.length, ej:ex(sinCatalogar),
-       desc:'Servicios que no entran en un grupo definido — revisar con la dueña para clasificar.'},
+       desc:'No caen en un grupo específico. A veces es normal (p. ej. paquetes con varios conceptos).'},
     ]
   };
 }
@@ -164,9 +251,8 @@ function renderKPIs(rowsAnio, allRows, matchDepto){
   const rowsMesPrev = mRef>0 ? rowsAnio.filter(r=>monthOf(r)===mRef-1) : [];
   const totalMesPrev = rowsMesPrev.reduce((s,r)=>s+num(r.totalMXN),0);
 
-  // TC vigente = TC de la transacción más reciente del año
-  const ult = rowsAnio.slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))[0];
-  const tcVig = ult?num(ult.tipoTC):0;
+  // Tipo de cambio vigente = el de EFECTIVO más reciente de la tabla TC
+  const tcEfe = latestTC('efectivo');
 
   const html = `
     <div class="kpi">
@@ -180,9 +266,9 @@ function renderKPIs(rowsAnio, allRows, matchDepto){
       <span class="k-sub">vs ${MESES[(mRef+11)%12]}: ${deltaBadge(totalMes,totalMesPrev)}</span>
     </div>
     <div class="kpi k-dorado">
-      <span class="k-label">Tipo de cambio vigente</span>
-      <span class="k-value">${tcVig>0?fmtMXN2.format(tcVig).replace('$',''):'—'}</span>
-      <span class="k-sub">última transacción ${ult?('· '+(ult.fecha||'').slice(0,10)):''}</span>
+      <span class="k-label">Tipo de cambio · Efectivo</span>
+      <span class="k-value">${tcEfe?fmtMXN2.format(tcEfe.val).replace('$',''):'—'}</span>
+      <span class="k-sub">${tcEfe?(MESES[tcEfe.mes-1]+' '+tcEfe.anio+' · efectivo'):'sin tabla TC'}</span>
     </div>
     <div class="kpi k-azul2">
       <span class="k-label"># Transacciones ${MESES[mRef]}</span>
@@ -195,6 +281,34 @@ function renderKPIs(rowsAnio, allRows, matchDepto){
 /* ---------- Render: gráficas ---------- */
 function destroyChart(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
 
+// Plugin local: etiquetas (nombre · %) por FUERA de la dona, con línea guía. Solo esta gráfica.
+const deptoOuterLabels = {
+  id:'deptoOuterLabels',
+  afterDatasetsDraw(chart){
+    const meta=chart.getDatasetMeta(0); if(!meta||!meta.data) return;
+    const ds=chart.data.datasets[0];
+    const total=ds.data.reduce((a,b)=>a+(b||0),0)||1;
+    const {ctx}=chart;
+    ctx.save();
+    ctx.font='700 10px '+getComputedStyle(document.body).fontFamily;
+    meta.data.forEach((arc,i)=>{
+      const val=ds.data[i]; if(!val) return;
+      const p=arc.getProps(['startAngle','endAngle','outerRadius','x','y'],true);
+      const ang=(p.startAngle+p.endAngle)/2, cos=Math.cos(ang), sin=Math.sin(ang);
+      const x0=p.x+cos*p.outerRadius, y0=p.y+sin*p.outerRadius;
+      const x1=p.x+cos*(p.outerRadius+12), y1=p.y+sin*(p.outerRadius+12);
+      const right=cos>=0, x2=x1+(right?16:-16);
+      const col=Array.isArray(ds.backgroundColor)?ds.backgroundColor[i]:ds.backgroundColor;
+      ctx.strokeStyle=col; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.lineTo(x2,y1); ctx.stroke();
+      const txt=`${chart.data.labels[i]} · ${(val/total*100).toFixed(1)}%`;
+      ctx.textAlign=right?'left':'right'; ctx.textBaseline='middle';
+      ctx.fillStyle='#2E2E26';
+      ctx.fillText(txt, x2+(right?4:-4), y1);
+    });
+    ctx.restore();
+  }
+};
 function renderDepto(rowsAnio){
   // Siempre muestra TODOS los departamentos (es el desglose). Clic = filtra.
   const m = sumBy(rowsAnio, r=>r.departamento||'(sin depto)', r=>num(r.totalMXN));
@@ -211,13 +325,15 @@ function renderDepto(rowsAnio){
     type:'doughnut',
     data:{labels, datasets:[{data, backgroundColor:colors, borderWidth:2, borderColor:'#fff'}]},
     options:{responsive:true,maintainAspectRatio:false,cutout:'58%',
+      layout:{padding:{top:10,bottom:10,left:70,right:70}},
       onClick:(e,els)=>{
         if(!els.length) return;
         const l=labels[els[0].index];
         setDepto(state.depto===l?'TODOS':l);
       },
       plugins:{legend:{display:false},
-        tooltip:{callbacks:{label:c=>` ${c.label}: ${fmtMXN.format(c.parsed)} (${(c.parsed/total*100).toFixed(1)}%)`}}}}
+        tooltip:{callbacks:{label:c=>` ${c.label}: ${fmtMXN.format(c.parsed)} (${(c.parsed/total*100).toFixed(1)}%)`}}}},
+    plugins:[deptoOuterLabels]
   });
 
   // Lista de montos por departamento (visible de inmediato, sin hover). Clic = filtra.
@@ -284,6 +400,79 @@ function renderComp(allRows, matchDepto){
   });
 }
 
+/* ---------- Render: Tipo de cambio por mes ----------
+   Eje X = meses (Ene..Dic). Una línea por año (leyenda). Botón alterna Efectivo/PayPal. */
+// Plugin local: valor (1 decimal) sobre cada punto + nombre del año al final de la línea.
+const tcDataLabels = {
+  id:'tcDataLabels',
+  afterDatasetsDraw(chart){
+    const {ctx}=chart;
+    const fam=getComputedStyle(document.body).fontFamily;
+    ctx.save();
+    chart.data.datasets.forEach((ds,di)=>{
+      if(!chart.isDatasetVisible(di)) return;
+      const meta=chart.getDatasetMeta(di);
+      // valores sobre cada punto, omitiendo los vacíos
+      ctx.font='700 10px '+fam; ctx.textAlign='center'; ctx.textBaseline='bottom';
+      let lastIdx=-1;
+      meta.data.forEach((pt,idx)=>{
+        const v=ds.data[idx];
+        if(v==null) return;
+        lastIdx=idx;
+        const txt=Number(v).toFixed(1);
+        ctx.lineWidth=3; ctx.strokeStyle='rgba(255,255,255,.9)';   // halo blanco
+        ctx.strokeText(txt, pt.x, pt.y-5);
+        ctx.fillStyle=ds.borderColor; ctx.fillText(txt, pt.x, pt.y-5);
+      });
+      // nombre de la serie (año) al final de su línea
+      if(lastIdx>=0){
+        const pt=meta.data[lastIdx];
+        ctx.font='800 11px '+fam; ctx.textAlign='left'; ctx.textBaseline='middle';
+        ctx.lineWidth=3; ctx.strokeStyle='rgba(255,255,255,.9)';
+        ctx.strokeText(ds.label, pt.x+8, pt.y);
+        ctx.fillStyle=ds.borderColor; ctx.fillText(ds.label, pt.x+8, pt.y);
+      }
+    });
+    ctx.restore();
+  }
+};
+function tcDatasets(tipo){
+  const anios = [...new Set(state.tcRows.map(r=>r.anio))].sort((a,b)=>a-b);
+  const series=[];
+  anios.forEach(a=>{
+    const arr = new Array(12).fill(null);
+    state.tcRows.filter(r=>r.anio===a).forEach(r=>{ arr[r.mes-1] = r[tipo]; });
+    if(arr.every(v=>v==null)) return;          // omite años sin datos (p.ej. 2026)
+    series.push({anio:a, arr});
+  });
+  return series.map((s,i)=>{
+    const col = SERIE[i%SERIE.length];
+    return { label:String(s.anio), data:s.arr, borderColor:col, backgroundColor:col,
+             borderWidth:2.5, tension:.3, pointRadius:3, pointHoverRadius:5, spanGaps:true };
+  });
+}
+function renderTC(){
+  const ds = tcDatasets(state.tcTipo);
+  // Si la gráfica ya existe y tiene los mismos años: solo cambia los valores SIN re-animar.
+  if(charts.tc && charts.tc.data.datasets.length===ds.length){
+    ds.forEach((d,i)=>{ charts.tc.data.datasets[i].data=d.data; });
+    charts.tc.update('none');   // 'none' = sin animación, cambio instantáneo
+    return;
+  }
+  destroyChart('tc');
+  charts.tc = new Chart(document.getElementById('chartTC'),{
+    type:'line',
+    data:{labels:MESES, datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,
+      layout:{padding:{top:14,right:44}},
+      interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'top',labels:{boxWidth:12,usePointStyle:true}},
+        tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${c.parsed.y!=null?'$'+c.parsed.y.toFixed(2):'s/d'}`}}},
+      scales:{y:{ticks:{callback:v=>'$'+Number(v).toFixed(1)}}}},
+    plugins:[tcDataLabels]
+  });
+}
+
 /* ---------- Render: banderas ---------- */
 function renderFlags(flags){
   const cont=document.getElementById('flags');
@@ -326,6 +515,53 @@ function renderTable(rowsAnio, flaggedRows, idxOf){
   }).join('');
 }
 
+/* ---------- Render: Ticket promedio por departamento ---------- */
+function renderTicket(rows){
+  const m=new Map();
+  rows.forEach(r=>{
+    const k=r.departamento||'(sin depto)';
+    const o=m.get(k)||{n:0,total:0}; o.n++; o.total+=num(r.totalMXN); m.set(k,o);
+  });
+  const arr=[...m.entries()].map(([k,o])=>({k,n:o.n,total:o.total,avg:o.total/(o.n||1)}))
+    .sort((a,b)=>b.avg-a.avg);                       // ordena por ticket promedio
+  const maxAvg=arr.length?Math.max(...arr.map(d=>d.avg)):1;
+  const el=document.getElementById('ticketDepto');
+  el.innerHTML=arr.map((d,i)=>{
+    const col=SERIE[i%SERIE.length];
+    const w=(d.avg/maxAvg*100).toFixed(1);
+    return `<div class="tk-row">
+      <div class="tk-top">
+        <span class="tk-name"><span class="dl-dot" style="background:${col}"></span>${d.k}</span>
+        <span class="tk-avg" style="color:${col}">${fmtMXN.format(d.avg)}</span>
+      </div>
+      <div class="tk-bar"><span style="width:${w}%;background:${col}"></span></div>
+      <div class="tk-sub">${fmtNum.format(d.n)} transacciones · total ${fmtMXN.format(d.total)}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ---------- Render: Top clientes (concentración de ingresos) ---------- */
+function renderTopClientes(rows){
+  const m=new Map();
+  rows.forEach(r=>{
+    const k=r.cliente||'(sin cliente)';
+    const o=m.get(k)||{n:0,total:0}; o.n++; o.total+=num(r.totalMXN); m.set(k,o);
+  });
+  const total=[...m.values()].reduce((a,o)=>a+o.total,0)||1;
+  const arr=[...m.entries()].map(([k,o])=>({k,n:o.n,total:o.total,pct:o.total/total*100}))
+    .sort((a,b)=>b.total-a.total).slice(0,8);
+  const max=arr.length?arr[0].total:1;
+  const top5=arr.slice(0,5).reduce((a,c)=>a+c.pct,0);
+  const lbl=document.getElementById('lblTopCli'); if(lbl) lbl.textContent=`top 5 = ${top5.toFixed(0)}%`;
+  const el=document.getElementById('topClientes');
+  el.innerHTML=arr.map(c=>`<div class="cli-row">
+    <span class="cli-name" title="${(c.k||'').replace(/"/g,'')}">${c.k}</span>
+    <span class="cli-bar"><span style="width:${(c.total/max*100).toFixed(1)}%"></span></span>
+    <span class="cli-amt">${fmtMXN.format(c.total)}</span>
+    <span class="cli-pct">${c.pct.toFixed(1)}%</span>
+  </div>`).join('');
+}
+
 /* ---------- Orquestación ---------- */
 function renderAll(){
   const all=state.rows;
@@ -338,7 +574,7 @@ function renderAll(){
   const rowsView   = rowsAnio.filter(match);                      // todo lo demás (ambos filtros)
   const idxOf=new Map(); all.forEach((r,i)=>idxOf.set(r,i));
 
-  const flags=computeFlags(rowsView);
+  const flags=computeFlags(rowsView, all);
   const flaggedByGlobal=new Set([...flags.flaggedRows].map(i=>idxOf.get(rowsView[i])));
 
   const parts=[]; if(state.depto!=='TODOS') parts.push(state.depto);
@@ -353,8 +589,12 @@ function renderAll(){
   renderDepto(rowsDepto);
   renderGrupo(rowsView);
   renderComp(all, match);
+  renderTicket(rowsView);
+  renderTopClientes(rowsView);
   renderFlags(flags);
   renderTable(rowsView, flaggedByGlobal, idxOf);
+
+  const lblT=document.getElementById('lblTicket'); if(lblT) lblT.textContent=state.anio+suf;
 
   const stamp=new Date();
   document.getElementById('updatedLabel').textContent='Actualizado '+stamp.toLocaleTimeString('es-MX');
@@ -382,6 +622,16 @@ function buildSelectors(){
   document.querySelectorAll('#tabs .tab').forEach(btn=>{
     btn.onclick=()=>setOficina(btn.dataset.ofi);
   });
+
+  // Toggle Efectivo / PayPal de la gráfica de tipo de cambio
+  document.querySelectorAll('#tcToggle .tc-opt').forEach(btn=>{
+    btn.onclick=()=>{
+      state.tcTipo=btn.dataset.tc;
+      document.querySelectorAll('#tcToggle .tc-opt').forEach(b=>
+        b.classList.toggle('active', b.dataset.tc===state.tcTipo));
+      renderTC();
+    };
+  });
 }
 
 function setOficina(o){
@@ -404,8 +654,10 @@ async function refresh(){
   btn.classList.add('spinning');
   try{
     state.rows = state.inExcel ? await loadDataLive() : await loadData();
+    state.tcRows = state.inExcel ? await loadTCLive() : await loadTC();
     if(!state.anio) buildSelectors();
     renderAll();
+    renderTC();
   }catch(e){
     document.getElementById('kpis').innerHTML=
       `<div class="state-msg err">${e.message}</div>`;

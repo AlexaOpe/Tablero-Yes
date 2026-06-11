@@ -130,12 +130,43 @@ body{
 .dl-amt{font-variant-numeric:tabular-nums;font-weight:700;color:var(--verde);}
 .dl-pct{font-size:11px;color:var(--texto-2);min-width:44px;text-align:right;}
 
+/* Toggle Efectivo / PayPal (control segmentado) */
+.tc-toggle{display:inline-flex;background:var(--crema);border-radius:20px;padding:3px;gap:2px;}
+.tc-opt{
+  border:none;cursor:pointer;background:transparent;color:var(--texto-2);
+  font-family:var(--font);font-size:12px;font-weight:600;padding:4px 14px;
+  border-radius:18px;transition:background .15s,color .15s;
+}
+.tc-opt:hover{color:var(--texto);}
+.tc-opt.active{background:var(--naranja);color:#fff;}
+
 .grid-charts{display:grid;gap:14px;grid-template-columns:1fr 1fr;margin-bottom:14px;}
 .card-wide{grid-column:1 / -1;}
 .chart-box{position:relative;height:260px;}
 .chart-box-wide{height:300px;}
 
-.grid-bottom{display:grid;gap:14px;grid-template-columns:1fr 1.4fr;}
+/* Ticket promedio por depto (vistoso: promedio grande + barra comparativa) */
+.mini-table{display:flex;flex-direction:column;gap:2px;}
+.tk-row{padding:9px 4px;border-bottom:1px solid var(--linea);}
+.tk-row:last-child{border-bottom:none;}
+.tk-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;gap:8px;}
+.tk-name{display:flex;align-items:center;gap:7px;font-weight:600;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;}
+.tk-avg{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.tk-bar{height:10px;background:var(--crema);border-radius:6px;overflow:hidden;}
+.tk-bar>span{display:block;height:100%;border-radius:6px;transition:width .3s;}
+.tk-sub{font-size:11px;color:var(--texto-2);margin-top:4px;}
+
+/* Top clientes */
+.cli-row{display:grid;grid-template-columns:1.3fr 1fr auto auto;gap:9px;align-items:center;padding:5px 7px;}
+.cli-row:nth-child(even){background:var(--crema-2);border-radius:8px;}
+.cli-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cli-bar{height:9px;background:var(--crema);border-radius:6px;overflow:hidden;}
+.cli-bar>span{display:block;height:100%;background:var(--naranja);border-radius:6px;}
+.cli-amt{font-variant-numeric:tabular-nums;font-weight:700;color:var(--verde);}
+.cli-pct{font-size:11px;color:var(--texto-2);min-width:42px;text-align:right;}
+
+.grid-bottom{display:grid;gap:14px;grid-template-columns:1.7fr 1fr;}
 
 /* Flags */
 .flags-list{display:flex;flex-direction:column;gap:8px;max-height:430px;overflow:auto;}
@@ -153,17 +184,17 @@ body{
 
 /* Table */
 .table-wrap{max-height:430px;overflow:auto;border-radius:8px;}
-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
 thead th{
   position:sticky;top:0;background:var(--verde);color:#fff;text-align:left;
-  padding:8px 10px;font-weight:600;white-space:nowrap;z-index:1;
+  padding:7px 7px;font-weight:600;white-space:nowrap;z-index:1;
 }
 thead th.num{text-align:right;}
-tbody td{padding:7px 10px;border-bottom:1px solid var(--linea);white-space:nowrap;}
+tbody td{padding:6px 7px;border-bottom:1px solid var(--linea);white-space:nowrap;}
 tbody td.num{text-align:right;font-variant-numeric:tabular-nums;}
 tbody tr:nth-child(even){background:var(--crema-2);}
 tbody tr.flagged{background:#fdf0ee;}
-.cell-clip{max-width:170px;overflow:hidden;text-overflow:ellipsis;}
+.cell-clip{max-width:130px;overflow:hidden;text-overflow:ellipsis;}
 
 .foot{
   display:flex;justify-content:space-between;color:var(--texto-2);font-size:11px;
