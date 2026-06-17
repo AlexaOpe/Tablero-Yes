@@ -1,0 +1,47 @@
+name: Reconstruir foto del tablero
+
+  on:
+    push:
+      paths:
+        - 'taskpane.html'
+        - 'styles.css'
+        - 'app.js'
+        - 'chart.umd.min.js'
+        - 'logo-marca.png'
+        - 'construir_foto.py'
+
+  permissions:
+    contents: write
+
+  concurrency:
+    group: construir-foto-${{ github.ref }}
+    cancel-in-progress: true
+
+  jobs:
+    construir:
+      runs-on: ubuntu-latest
+      steps:
+        - name: Descargar el repo
+          uses: actions/checkout@v4
+          with:
+            ref: ${{ github.ref_name }}
+
+        - name: Instalar Python
+          uses: actions/setup-python@v5
+          with:
+            python-version: '3.x'
+
+        - name: Reconstruir foto-plantilla.html desde el panel
+          run: python construir_foto.py
+
+        - name: Subir la foto (solo si cambió)
+          run: |
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add foto-plantilla.html
+            if git diff --staged --quiet; then
+              echo "La foto ya estaba al dia; nada que subir."
+            else
+              git commit -m "Auto: reconstruir foto del tablero desde el panel [skip ci]"
+              git push origin HEAD:${{ github.ref_name }}
+            fi
