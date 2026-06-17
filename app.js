@@ -113,6 +113,7 @@ async function loadDataLive(){
 const MES_NOM = {enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,
                  julio:7,agosto:8,septiembre:9,octubre:10,noviembre:11,diciembre:12};
 async function loadTC(){
+  if (Array.isArray(window.__TC__)) return window.__TC__;   // foto descargada: TC inyectado
   try{
     const r = await fetch('data/tc.json', {cache:'no-store'});
     if(!r.ok) throw new Error('HTTP '+r.status);
@@ -691,7 +692,10 @@ async function downloadFoto(){
     let tpl=await r.text();
     // El marcador va entre comillas en la plantilla; lo cambiamos por el arreglo real.
     const datos=JSON.stringify(state.rows);
-    tpl=tpl.replace('"__FACT_PLACEHOLDER__"', datos);
+    const tcDatos=JSON.stringify(state.tcRows||[]);
+    // Reemplazo con función para que un "$" en los datos no se interprete como patrón.
+    tpl=tpl.replace('"__FACT_PLACEHOLDER__"', ()=>datos)
+           .replace('"__TC_PLACEHOLDER__"', ()=>tcDatos);
     const blob=new Blob([tpl],{type:'text/html;charset=utf-8'});
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
